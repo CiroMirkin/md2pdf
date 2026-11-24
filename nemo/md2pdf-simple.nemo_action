@@ -1,0 +1,8 @@
+[Nemo Action]
+Active=true
+Name=PDF simple
+Comment=Una columna
+Exec=md2pdf simple %F
+Icon-Name=application-pdf
+Selection=s
+Extensions=md;markdown;

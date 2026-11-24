@@ -1,0 +1,11 @@
+Package: md2pdf
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: all
+Depends: libnotify-bin, poppler-utils
+Recommends: nemo
+Maintainer: CiroMirkin <noreply@github.com>
+Description: Clic derecho en un .md para convertirlo a PDF
+ Submenu PDF en Nemo con tres opciones: PDF simple, PDF doble
+ (dos columnas) y PDF paginado (dos paginas por cara).

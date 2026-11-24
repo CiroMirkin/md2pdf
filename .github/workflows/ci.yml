@@ -1,0 +1,19 @@
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils fakeroot libnotify-bin
+      - run: tests/test.sh
+      - run: ./build-deb.sh "0.1.0"
+      - run: dpkg-deb -c dist/*.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: md2pdf-deb
+          path: dist/*.deb

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOME_DIR="${MD2PDF_HOME:-/usr/lib/md2pdf}"
+modo="${1:-}"; entrada="${2:-}"
+
+aviso() { [[ -z "${MD2PDF_SILENCIO:-}" ]] && command -v notify-send >/dev/null && notify-send -i application-pdf "md2pdf" "$1" || true; }
+falla() { echo "md2pdf: $1" >&2; aviso "Error: $1"; exit 1; }
+
+[[ "$modo" =~ ^(simple|doble|paginado)$ && -n "$entrada" ]] || { echo "uso: md2pdf {simple|doble|paginado} archivo.md" >&2; exit 2; }
+[[ -f "$entrada" ]] || falla "no existe $entrada"
+case "${entrada,,}" in *.md|*.markdown) ;; *) falla "no es un archivo .md" ;; esac
+
+base="${entrada%.*}"
+# Nemo lanza el comando sin el PATH de la shell del usuario y uv vive en ~/.local/bin
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:$PATH"
+command -v uv >/dev/null || falla "falta uv (https://docs.astral.sh/uv/)"
+py() { uv run --quiet "$@"; }
+# En el repo los scripts están en src/md2pdf y en el paquete instalado en src
+src="$HOME_DIR/src"; [[ -f "$src/pdf.py" ]] || src="$HOME_DIR/src/md2pdf"
+
+log=$(mktemp); tmp=$(mktemp -d)
+trap 'rm -rf "$log" "$tmp"' EXIT
+
+case "$modo" in
+  simple)   salida="$base.pdf";        py "$src/pdf.py" "$entrada" -f simple   -o "$salida" >"$log" 2>&1 ;;
+  doble)    salida="$base-doble.pdf";  py "$src/pdf.py" "$entrada" -f columnas -o "$salida" >"$log" 2>&1 ;;
+  paginado) salida="$base-paginado.pdf"
+            { py "$src/pdf.py" "$entrada" -f simple -o "$tmp/simple.pdf" &&
+              py "$src/paginar.py" "$tmp/simple.pdf" -o "$salida"; } >"$log" 2>&1 ;;
+esac || falla "$(tail -n 3 "$log")"
+
+aviso "PDF listo: $(basename "$salida")"
+echo "$salida"

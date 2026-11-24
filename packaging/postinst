@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+  # El submenú de Nemo es por usuario y el paquete no puede escribir en su home entonces se arma acá para quien corrió sudo
+  su "$SUDO_USER" -c "/usr/bin/md2pdf-menu" || true
+fi
+echo "md2pdf instalado. Requiere uv. Si el menu no aparece: nemo -q, y como usuario: md2pdf-menu"

@@ -1,0 +1,8 @@
+[Nemo Action]
+Active=true
+Name=PDF paginado
+Comment=Dos páginas por cara para imprimir
+Exec=md2pdf paginado %F
+Icon-Name=application-pdf
+Selection=s
+Extensions=md;markdown;

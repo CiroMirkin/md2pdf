@@ -1,0 +1,8 @@
+[Nemo Action]
+Active=true
+Name=PDF doble
+Comment=Dos columnas, justificado
+Exec=md2pdf doble %F
+Icon-Name=application-pdf
+Selection=s
+Extensions=md;markdown;
