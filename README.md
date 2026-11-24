@@ -74,6 +74,6 @@ Requiere `uv` y `poppler-utils`. El workflow de GitHub Actions corre las pruebas
 
 Al instalar el `.deb` publicado, el paquete agrega el repositorio `https://ciromirkin.github.io/md2pdf` y su clave, así que `sudo apt update && sudo apt upgrade` trae las versiones nuevas.
 
-Para actualizar solo este paquete: `sudo apt install --only-upgrade md2pdf`.
+Para actualizar solo este paquete: `sudo apt update && sudo apt install --only-upgrade md2pdf`. El `apt update` va primero porque `--only-upgrade` usa la lista de versiones que quedó de la última vez.
 
 Para publicar una versión: `git tag v0.2.0 && git push --tags`. El workflow `release` arma el `.deb`, firma el repositorio y lo publica en GitHub Pages. Necesita los secretos `GPG_PRIVATE_KEY` y `GPG_KEY_ID` y Pages activado con origen "GitHub Actions".
