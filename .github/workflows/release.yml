@@ -38,7 +38,7 @@ jobs:
       - name: Crear el Release de GitHub con el .deb
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.deb --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" dist/*.deb --title "$GITHUB_REF_NAME" --generate-notes
       - uses: actions/configure-pages@v5
         id: pages
       - uses: actions/upload-pages-artifact@v3
