@@ -229,8 +229,41 @@ def has_color(node):
     return any(has_color(child) for child in getattr(node, "contents", []))
 
 
+def prepare_svg(path):
+    """svglib no resuelve `currentColor` ni dibuja `marker-end`, y sin esto el PDF pierde lineas y puntas de flecha."""
+    import math, os, tempfile
+    text = Path(path).read_text(encoding="utf-8").replace("currentColor", "#000000")
+
+    def arrow(m):
+        tag = m.group(0)
+        if "marker-end" not in tag:
+            return tag
+        n = {k: float(v) for k, v in re.findall(r'\b(x1|y1|x2|y2)="([-\d.]+)"', tag)}
+        sw = re.search(r'stroke-width="([\d.]+)"', tag)
+        stroke = re.search(r'stroke="([^"]+)"', tag)
+        if len(n) < 4:
+            return tag
+        s = 8 * (float(sw.group(1)) if sw else 1) / 10
+        a = math.atan2(n["y2"] - n["y1"], n["x2"] - n["x1"])
+        pts = []
+        for dx, dy in ((-9, -5), (1, 0), (-9, 5)):
+            pts.append(f"{n['x2'] + s * (dx * math.cos(a) - dy * math.sin(a)):.2f},{n['y2'] + s * (dx * math.sin(a) + dy * math.cos(a)):.2f}")
+        tag = re.sub(r'\s*marker-end="[^"]*"', "", tag)
+        return f'{tag}<polygon points="{" ".join(pts)}" fill="{stroke.group(1) if stroke else "#000000"}"/>'
+
+    text = re.sub(r"<line\b[^>]*/>", arrow, text)
+    fd, tmp = tempfile.mkstemp(suffix=".svg")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    return tmp
+
+
 def diagram(path, caption, max_w, max_h, color, style):
-    drawing = svg2rlg(str(path))
+    tmp = prepare_svg(path)
+    try:
+        drawing = svg2rlg(tmp)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
     if drawing is None:
         raise SystemExit(f"no se pudo leer el SVG: {path}")
     if not color and has_color(drawing):

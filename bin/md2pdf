@@ -19,15 +19,21 @@ py() { uv run --quiet "$@"; }
 # En el repo los scripts están en src/md2pdf y en el paquete instalado en src
 src="$HOME_DIR/src"; [[ -f "$src/pdf.py" ]] || src="$HOME_DIR/src/md2pdf"
 
+# Los diagramas a color solo se admiten con --color entonces se reintenta así para no perder la conversión
+convertir() {
+  py "$src/pdf.py" "$@" >"$log" 2>&1 && return 0
+  grep -q "tiene colores" "$log" && py "$src/pdf.py" "$@" --color >"$log" 2>&1
+}
+
 log=$(mktemp); tmp=$(mktemp -d)
 trap 'rm -rf "$log" "$tmp"' EXIT
 
 case "$modo" in
-  simple)   salida="$base.pdf";        py "$src/pdf.py" "$entrada" -f simple   -o "$salida" >"$log" 2>&1 ;;
-  doble)    salida="$base-doble.pdf";  py "$src/pdf.py" "$entrada" -f columnas -o "$salida" >"$log" 2>&1 ;;
+  simple)   salida="$base.pdf";        convertir "$entrada" -f simple -o "$salida" ;;
+  doble)    salida="$base-doble.pdf";  convertir "$entrada" -f columnas -o "$salida" ;;
   paginado) salida="$base-paginado.pdf"
-            { py "$src/pdf.py" "$entrada" -f simple -o "$tmp/simple.pdf" &&
-              py "$src/paginar.py" "$tmp/simple.pdf" -o "$salida"; } >"$log" 2>&1 ;;
+            convertir "$entrada" -f simple -o "$tmp/simple.pdf" &&
+              py "$src/paginar.py" "$tmp/simple.pdf" -o "$salida" >>"$log" 2>&1 ;;
 esac || falla "$(tail -n 3 "$log")"
 
 aviso "PDF listo: $(basename "$salida")"
