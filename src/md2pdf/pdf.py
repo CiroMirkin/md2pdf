@@ -24,8 +24,10 @@ Un bloque de tabla (`| a | b |`, con `|---|---|` como segunda linea) ocupa todo 
 un diagrama. Se corta entre filas, tras MIN_LINES filas o mas, y repite el encabezado en la pagina
 siguiente.
 
-Un `<details><summary>..</summary>texto</details>` en una sola linea (respuesta de quiz) se imprime
-sin desplegable y boca abajo (girado 180 grados), para leerlo solo dando vuelta la pagina. Las demas
+Un `<details><summary>..</summary>texto</details>` en una sola linea (respuesta de quiz o de un
+escenario, con o sin atributos como `class="girar"`) se imprime sin desplegable y boca abajo (girado
+180 grados, al 90% de opacidad y con 8 de margen arriba y abajo), para leerlo solo dando vuelta la
+pagina. Si va pegado a las lineas de arriba (las opciones), se separa solo. Las demas
 marcas `<details>` se descartan y el `<summary>` queda como linea en negrita.
 
 La primera pagina lleva la fecha de hoy (dd/mm/aaaa) arriba a la derecha, dentro del margen, al 80%
@@ -104,8 +106,13 @@ class Block(Paragraph):
         super().draw()
 
 
+UPSIDE_OPACITY = 0.9  # opacidad de la respuesta girada
+UPSIDE_MARGIN_Y = 8   # margen arriba y abajo de la respuesta girada, en puntos
+
+
 class Upside(Flowable):
-    """Un parrafo girado 180 grados: se lee dando vuelta la pagina."""
+    """Un parrafo girado 180 grados, al 90% de opacidad y con 8 de margen arriba y abajo: se lee
+    dando vuelta la pagina."""
 
     def __init__(self, para):
         super().__init__()
@@ -113,13 +120,14 @@ class Upside(Flowable):
 
     def wrap(self, aW, aH):
         self.width, self.height = aW, self.para.wrap(aW, 1e6)[1]
-        return self.width, self.height + self.para.style.spaceAfter
+        return self.width, self.height + 2 * UPSIDE_MARGIN_Y + self.para.style.spaceAfter
 
     def draw(self):
         LAST_DRAWN[self.canv.getPageNumber()] = self
         c = self.canv
         c.saveState()
-        c.translate(self.width, self.height)
+        c.setFillAlpha(UPSIDE_OPACITY)
+        c.translate(self.width, self.height + UPSIDE_MARGIN_Y)
         c.rotate(180)
         self.para.drawOn(c, 0, 0)
         c.restoreState()
@@ -536,7 +544,9 @@ def story_from(text, body, head, sub, title_style, quote, figure, table, code, p
         h.ref = ref
         return h
 
-    for block in re.split(r"\n\s*\n", text.replace("\r", "").strip()):
+    # una respuesta <details> pegada a las lineas de arriba (opciones de un quiz) es su propio bloque
+    text = re.sub(r"(?<!\n)\n(<details[^\n]*</details>[ \t]*)(?=\n|$)", r"\n\n\1", text.replace("\r", ""))
+    for block in re.split(r"\n\s*\n", text.strip()):
         lines = [l.strip() for l in block.splitlines()]
         if simple and all(re.fullmatch(r"-{3,}", l) for l in lines):
             continue  # regla horizontal: en una columna no se imprime
@@ -556,7 +566,7 @@ def story_from(text, body, head, sub, title_style, quote, figure, table, code, p
             story.append(table(rows))
             continue
         line = " ".join(lines)
-        det = re.fullmatch(r"<details><summary>.*?</summary>(.*)</details>", line, re.S)
+        det = re.fullmatch(r"<details(?:\s[^>]*)?><summary>.*?</summary>(.*)</details>", line, re.S)
         if det:
             # respuesta de quiz: sin desplegable, boca abajo, se lee dando vuelta la pagina
             story.append(Upside(Block(inline(det.group(1).strip()), ParagraphStyle("u", parent=body, alignment=TA_LEFT))))
