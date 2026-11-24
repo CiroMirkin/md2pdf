@@ -1,0 +1,43 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: sudo apt-get update && sudo apt-get install -y poppler-utils fakeroot libnotify-bin dpkg-dev apt-utils
+      - run: tests/test.sh
+      - name: Importar clave de firma
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          mkdir -p build-keyring
+          gpg --export "${{ secrets.GPG_KEY_ID }}" > build-keyring/md2pdf.gpg
+      - name: Armar el paquete y el repositorio apt
+        run: |
+          ./build-deb.sh "${GITHUB_REF_NAME#v}"
+          mkdir -p site && cp dist/*.deb site/
+          cd site
+          dpkg-scanpackages --multiversion . > Packages
+          gzip -k -f Packages
+          apt-ftparchive release . > Release
+          gpg --batch --yes -u "${{ secrets.GPG_KEY_ID }}" --clearsign -o InRelease Release
+          gpg --batch --yes -u "${{ secrets.GPG_KEY_ID }}" -abs -o Release.gpg Release
+          cp ../build-keyring/md2pdf.gpg .
+      - uses: actions/configure-pages@v5
+        id: pages
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4

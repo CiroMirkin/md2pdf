@@ -1,0 +1,1 @@
+deb [signed-by=/usr/share/keyrings/md2pdf.gpg] https://ciromirkin.github.io/md2pdf ./
