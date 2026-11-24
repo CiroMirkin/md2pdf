@@ -3,7 +3,7 @@ on:
   push:
     tags: ["v*"]
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 jobs:
@@ -35,6 +35,10 @@ jobs:
           gpg --batch --yes -u "${{ secrets.GPG_KEY_ID }}" --clearsign -o InRelease Release
           gpg --batch --yes -u "${{ secrets.GPG_KEY_ID }}" -abs -o Release.gpg Release
           cp ../build-keyring/md2pdf.gpg .
+      - name: Crear el Release de GitHub con el .deb
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.deb --title "$GITHUB_REF_NAME" --generate-notes
       - uses: actions/configure-pages@v5
         id: pages
       - uses: actions/upload-pages-artifact@v3
