@@ -22,6 +22,25 @@ done
 paginas() { pdfinfo "$1" | awk '/^Pages/ {print $2}'; }
 (( $(paginas "$t/doc-doble.pdf") != $(paginas "$t/doc.pdf") )) || falla "el PDF doble se compone distinto del simple"
 
+# PNG de 1x1
+base64 -d <<<'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhWMjWwAAAABJRU5ErkJggg==' > "$t/foto.png"
+printf '# Titulo\n\n![](./foto.png)\n\nTexto.\n' > "$t/foto.md"
+md2pdf simple "$t/foto.md" >/dev/null || falla "un .md con una imagen que no es SVG se convierte"
+(( $(pdfimages -list "$t/foto.pdf" | tail -n +3 | wc -l) > 0 )) || falla "la imagen queda dentro del PDF"
+
+printf '# Titulo\n\n_inclinada_ y **negrita con _ambas_**, nombre_de_variable, __init__, [_enlace_](https://x.org/_ruta_) y **_cruce** suelto_.\n' > "$t/guion.md"
+md2pdf simple "$t/guion.md" >/dev/null || falla "un .md con guiones bajos se convierte"
+texto=$(pdftotext "$t/guion.pdf" - | tr '\n' ' ')
+[[ $texto == *"inclinada y negrita con ambas, nombre_de_variable, __init__, enlace"* ]] || falla "_texto_ es italica y no toca los guiones bajos dentro de una palabra ($texto)"
+grep -aq 'https://x.org/_ruta_' "$t/guion.pdf" || falla "los guiones bajos de una URL quedan como estan"
+
+printf '# Titulo\n\n[![Diagrama remoto](https://x.org/a.webp)](https://x.org/pagina)\n\n![Foto remota](https://x.org/b.png)\n\n[![](https://x.org/c.png)](https://x.org/sin-texto)\n\nVer ![insignia](https://x.org/d.svg) aca.\n\n[![](./foto.png)](https://x.org/local)\n' > "$t/enlace.md"
+md2pdf simple "$t/enlace.md" >/dev/null || falla "un .md con imagenes remotas se convierte"
+texto=$(pdftotext "$t/enlace.pdf" - | tr '\n' ' ')
+[[ $texto == *"Diagrama remoto"*"Foto remota"*"imagen"*"Ver insignia aca."* && $texto != *']('* && $texto != *x.org* ]] || falla "de una imagen remota sale solo su texto ($texto)"
+grep -aq 'https://x.org/pagina' "$t/enlace.pdf" && grep -aq 'https://x.org/b.png' "$t/enlace.pdf" || falla "ese texto enlaza al destino, o a la imagen si no hay otro"
+(( $(pdfimages -list "$t/enlace.pdf" | tail -n +3 | wc -l) > 0 )) || falla "una imagen local con enlace se inserta"
+
 echo x > "$t/a.txt"
 md2pdf simple "$t/a.txt" 2>/dev/null && falla "un archivo que no es .md se rechaza"
 
