@@ -34,12 +34,34 @@ texto=$(pdftotext "$t/guion.pdf" - | tr '\n' ' ')
 [[ $texto == *"inclinada y negrita con ambas, nombre_de_variable, __init__, enlace"* ]] || falla "_texto_ es italica y no toca los guiones bajos dentro de una palabra ($texto)"
 grep -aq 'https://x.org/_ruta_' "$t/guion.pdf" || falla "los guiones bajos de una URL quedan como estan"
 
-printf '# Titulo\n\n[![Diagrama remoto](https://x.org/a.webp)](https://x.org/pagina)\n\n![Foto remota](https://x.org/b.png)\n\n[![](https://x.org/c.png)](https://x.org/sin-texto)\n\nVer ![insignia](https://x.org/d.svg) aca.\n\n[![](./foto.png)](https://x.org/local)\n' > "$t/enlace.md"
-md2pdf simple "$t/enlace.md" >/dev/null || falla "un .md con imagenes remotas se convierte"
-texto=$(pdftotext "$t/enlace.pdf" - | tr '\n' ' ')
-[[ $texto == *"Diagrama remoto"*"Foto remota"*"imagen"*"Ver insignia aca."* && $texto != *']('* && $texto != *x.org* ]] || falla "de una imagen remota sale solo su texto ($texto)"
-grep -aq 'https://x.org/pagina' "$t/enlace.pdf" && grep -aq 'https://x.org/b.png' "$t/enlace.pdf" || falla "ese texto enlaza al destino, o a la imagen si no hay otro"
-(( $(pdfimages -list "$t/enlace.pdf" | tail -n +3 | wc -l) > 0 )) || falla "una imagen local con enlace se inserta"
+# Un servidor local hace de internet
+mkdir "$t/web"; cp "$t/foto.png" "$t/web/foto"
+echo '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="40"><text x="10" y="25">DentroDelSvg</text></svg>' > "$t/web/dibujo"
+echo '<html>no soy una imagen</html>' > "$t/web/pagina.png"
+echo '<svg xmlns="http://www.w3.org/2000/svg" width="200"' > "$t/web/cortado"
+python3 -u -c 'import functools, http.server as h, sys
+s = h.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(h.SimpleHTTPRequestHandler, directory=sys.argv[1]))
+print(s.server_port); s.serve_forever()' "$t/web" > "$t/puerto" 2>/dev/null &
+servidor=$!; trap 'kill $servidor; rm -rf "$t"' EXIT
+until [[ -s "$t/puerto" ]]; do sleep 0.1; done
+web="http://127.0.0.1:$(cat "$t/puerto")"
+imagenes() { pdfimages -list "$1" | tail -n +3 | wc -l; }
+
+# las URL no llevan extension: el tipo sale del contenido
+printf '# Titulo\n\n[![Foto remota](%s/foto)](%s/destino)\n\n![](%s/dibujo)\n' "$web" "$web" "$web" > "$t/remota.md"
+md2pdf simple "$t/remota.md" >/dev/null || falla "un .md con imagenes remotas se convierte"
+(( $(imagenes "$t/remota.pdf") == 1 )) || falla "una foto remota se ve en el PDF"
+[[ $(pdftotext "$t/remota.pdf" - | tr '\n' ' ') == *DentroDelSvg* ]] || falla "un SVG remoto se ve en el PDF"
+
+printf '# Titulo\n\n[![No existe](%s/nada)](%s/destino)\n\n![Sin servidor](http://127.0.0.1:1/b.png)\n\n![](%s/pagina.png)\n\n![SVG cortado](%s/cortado)\n\nVer [![insignia](%s/foto)](%s/otro) y ![sello](%s/foto) aca.\n' "$web" "$web" "$web" "$web" "$web" "$web" "$web" > "$t/rota.md"
+md2pdf simple "$t/rota.md" >/dev/null || falla "una imagen que no se puede traer no corta la conversion"
+texto=$(pdftotext "$t/rota.pdf" - | tr '\n' ' ')
+[[ $texto == *"No existe"*"Sin servidor"*"imagen"*"SVG cortado"*"Ver insignia y sello aca."* && $texto != *']('* ]] || falla "en lugar de esas imagenes y de las que van en medio del texto sale su texto ($texto)"
+grep -aq "$web/destino" "$t/rota.pdf" && grep -aq 'http://127.0.0.1:1/b.png' "$t/rota.pdf" || falla "ese texto enlaza al destino, o a la imagen si no hay otro"
+(( $(imagenes "$t/rota.pdf") == 0 )) || falla "una imagen en medio del texto no se inserta"
+
+printf '# Titulo\n\n[![](./foto.png)](https://x.org/local)\n' > "$t/local.md"
+md2pdf simple "$t/local.md" >/dev/null && (( $(imagenes "$t/local.pdf") == 1 )) || falla "una imagen local con enlace se inserta"
 
 echo x > "$t/a.txt"
 md2pdf simple "$t/a.txt" 2>/dev/null && falla "un archivo que no es .md se rechaza"

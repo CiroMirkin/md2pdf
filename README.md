@@ -20,7 +20,7 @@ Es para quien escribe notas, apuntes o documentación en Markdown y quiere pasar
 
 - Tres formatos: simple, doble (dos columnas) y paginado (para imprimir).
 - Salida en A4 con texto justificado y guionado, número de sección en el margen y fecha en la primera página.
-- Los bloques de código llevan rótulo y resaltado en escala de grises. También admite tablas, diagramas SVG e imágenes (PNG, JPG, WebP).
+- Los bloques de código llevan rótulo y resaltado en escala de grises. También admite tablas, diagramas SVG e imágenes (PNG, JPG, WebP), locales o de internet; las remotas se descargan al convertir.
 - El `.deb` suma las acciones de Nemo y arma el submenú del usuario. Las librerías de Python las baja `uv` la primera vez.
 
 | Opción | Archivo de salida | Formato |

@@ -17,8 +17,9 @@ bloque con alguna linea que no entra en la columna ocupa todo el ancho, como una
 que no entran ni asi siguen abajo, sangradas. Se corta entre lineas, tras MIN_LINES o mas.
 
 Un bloque `![epigrafe](diagrama.svg)` inserta un diagrama o una imagen (PNG, JPG, WebP) centrado en la pagina, con la ruta
-relativa al archivo de entrada. Las imagenes que no son SVG salen en grises sin --color. De una
-imagen remota, que no se descarga, o en medio del texto, sale su texto alternativo como enlace. En dos columnas interrumpe ambas: el texto anterior se reparte
+relativa al archivo de entrada. Las imagenes que no son SVG salen en grises sin --color. Las
+imagenes remotas (http o https) se descargan. De una que no se puede traer, o en medio del texto,
+sale su texto alternativo como enlace. En dos columnas interrumpe ambas: el texto anterior se reparte
 parejo arriba y el siguiente sigue debajo. Sin --color, un SVG con colores es un error.
 
 Un bloque de tabla (`| a | b |`, con `|---|---|` como segunda linea) ocupa todo el ancho, igual que
@@ -45,7 +46,7 @@ pagina termina con un titulo o un bloque recien empezado, el script sale con err
   cuadernillo  paginas A5 impuestas de a dos por hoja A4 apaisada, en orden de cuadernillo:
                imprimir doble faz volteando por el borde corto, doblar al medio
 """
-import argparse, datetime, io, re
+import argparse, datetime, io, re, sys, tempfile
 from pathlib import Path
 
 from reportlab.graphics import shapes
@@ -67,6 +68,7 @@ CELL, CELL_PAD = BODY - 2, 5
 CODE, CODE_LEADING, CODE_PAD, LABEL = 8.5, 10.5, 5, 7.5
 CODE_GRAY = "#555555"  # comentarios y textos entre comillas, sin --color
 LAST_DRAWN = {}  # pagina -> ultimo elemento dibujado en ella
+TIMEOUT, MAX_DOWNLOAD = 15, 20 * 1024 * 1024  # por imagen remota: segundos y bytes
 CODE_WORDS = set()  # palabras escritas como `codigo`, que no se parten en silabas
 
 
@@ -314,6 +316,18 @@ def diagram(path, caption, max_w, max_h, color, style):
     drawing.scale(k, k)
     drawing.width, drawing.height = drawing.width * k, drawing.height * k
     return drawing, Paragraph(inline(caption), style) if caption else None
+
+
+def download(url, folder):
+    """Guarda una imagen remota en `folder`. El tipo sale del contenido: muchas URL no llevan extension."""
+    from urllib.request import Request, urlopen
+    with urlopen(Request(url, headers={"User-Agent": "md2pdf"}), timeout=TIMEOUT) as response:
+        data = response.read(MAX_DOWNLOAD + 1)
+    if len(data) > MAX_DOWNLOAD:
+        raise OSError("la imagen pesa demasiado")
+    path = Path(folder) / ("imagen.svg" if data.lstrip().startswith(b"<") and b"<svg" in data[:4096] else "imagen")
+    path.write_bytes(data)
+    return path
 
 
 class Figures(Flowable):
@@ -611,11 +625,11 @@ def story_from(text, body, head, sub, title_style, quote, figure, table, code, p
         if summ:
             story.append(Head(inline(f"**{summ.group(1)}**"), body))
             continue
-        # imagen sola en su bloque, con o sin enlace: solo se insertan los archivos locales
+        # imagen sola en su bloque, con o sin enlace
         fig = (re.fullmatch(r"\[!\[([^\]]*)\]\(((?:(?!\]\().)+)\)\]\([^)\s]+\)", line)
                or re.fullmatch(r"!\[([^\]]*)\]\(((?:(?!\]\().)+)\)", line))
-        if fig and not re.match(r"[a-z]{2,}:", fig[2], re.I):
-            f = figure(*fig.groups())
+        f = figure(*fig.groups()) if fig else None
+        if f:
             # diagramas seguidos van juntos, uno debajo del otro
             if story and isinstance(story[-1], Figures):
                 story[-1].figures.append(f)
@@ -685,8 +699,19 @@ def render(text, out, cols, pagesize, base, color, margin=MARGIN, informe=False)
     def table(rows):
         return grid(rows, W - 2 * margin, cell, cell_head)
 
-    def figure(caption_text, path):
-        return diagram(base / path, caption_text, W - 2 * margin, (H - 2 * margin) * 0.6, color, caption)
+    def figure(caption_text, source):
+        """None si es una imagen remota que no se pudo traer: queda como enlace."""
+        def draw(path):
+            return diagram(path, caption_text, W - 2 * margin, (H - 2 * margin) * 0.6, color, caption)
+
+        if not re.match(r"https?:", source, re.I):
+            return draw(base / source)
+        with tempfile.TemporaryDirectory() as folder:
+            try:
+                return draw(download(source, folder))
+            except Exception as e:  # red, HTTP, formato o SVG roto: nada de eso corta la conversion
+                print(f"no se pudo traer {source}: {e}", file=sys.stderr)
+                return None
 
     col_w = (W - 2 * margin - GUTTER * (cols - 1)) / cols
 
