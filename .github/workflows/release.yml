@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.pages.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.reintento.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -40,8 +40,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" dist/*.deb --title "$GITHUB_REF_NAME" --generate-notes
       - uses: actions/configure-pages@v5
-        id: pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+      # deploy-pages a veces no ve el artefacto recien subido (actions/deploy-pages#451): se reintenta sin volver a subirlo
       - uses: actions/deploy-pages@v4
+        id: deploy
+        continue-on-error: true
+      - if: steps.deploy.outcome == 'failure'
+        run: sleep 60
+      - uses: actions/deploy-pages@v4
+        id: reintento
+        if: steps.deploy.outcome == 'failure'
