@@ -92,7 +92,7 @@ def inline(s):
 
     s = escape(plain(re.sub(r"`([^`]+)`", keep, s)))
     s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2" color="#1a5fb4">\1</a>', s)
-    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"\*\*(.+?)\*\*(?!\*)", r"<b>\1</b>", s)
     s = re.sub(r"\*(.+?)\*", r"<i>\1</i>", s)
     return re.sub(r"\x00(\d+)\x00", lambda m: f'<font face="Courier">{escape(plain(codes[int(m.group(1))]))}</font>', s)
 

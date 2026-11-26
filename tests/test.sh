@@ -6,7 +6,7 @@ export MD2PDF_SILENCIO=1 MD2PDF_HOME="$PWD" PATH="$PWD/bin:$PATH"
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 mkdir "$t/tmp"
 largo=$(for i in $(seq 1 60); do printf 'Parrafo %s con bastante texto para que la pagina se llene de a poco y haga falta mas de una.\n\n' "$i"; done)
-printf '# Titulo\n\n## Seccion\n\nTexto de prueba con **negrita**.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```python ejemplo.py\nprint("hola")\n```\n\n%s\n' "$largo" > "$t/doc.md"
+printf '# Titulo\n\n## Seccion\n\nTexto de prueba con **negrita**, ***ambas:*** y **negrita con *italica***.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```python ejemplo.py\nprint("hola")\n```\n\n%s\n' "$largo" > "$t/doc.md"
 
 falla() { echo "FALLA: $1"; exit 1; }
 hoja() { pdfinfo "$1" | awk '/Page size/ {print $3 "x" $5}'; }
