@@ -1,5 +1,5 @@
 # /// script
-# dependencies = ["reportlab", "pypdf", "svglib", "pygments", "pyphen"]
+# dependencies = ["reportlab", "pillow", "pypdf", "svglib", "pygments", "pyphen"]
 # ///
 """Convierte un archivo de texto en PDF.
 
@@ -7,7 +7,7 @@
 
 Texto de entrada: `# ` titulo, `## ` seccion, `### ` subseccion, parrafos separados por una
 linea en blanco, bloques de `- ` vinetas, bloques de `> ` cita (sangrados), y `**negrita**`,
-`*italica*`, `[texto](url)` y `codigo` dentro del texto. El resto se copia tal cual.
+`*italica*` o `_italica_`, `[texto](url)` y `codigo` dentro del texto. El resto se copia tal cual.
 
 Un bloque ```lenguaje [rotulo] ... ``` es codigo: monoespaciado, con los saltos de linea tal cual
 y resaltado en grises (palabras clave en negrita; comentarios en italica y gris oscuro, igual
@@ -16,8 +16,9 @@ esta, va en una franja arriba. Con --color el resaltado lleva ademas colores. En
 bloque con alguna linea que no entra en la columna ocupa todo el ancho, como una tabla; las lineas
 que no entran ni asi siguen abajo, sangradas. Se corta entre lineas, tras MIN_LINES o mas.
 
-Un bloque `![epigrafe](diagrama.svg)` inserta un diagrama centrado en la pagina, con la ruta
-relativa al archivo de entrada. En dos columnas interrumpe ambas: el texto anterior se reparte
+Un bloque `![epigrafe](diagrama.svg)` inserta un diagrama o una imagen (PNG, JPG, WebP) centrado en la pagina, con la ruta
+relativa al archivo de entrada. Las imagenes que no son SVG salen en grises sin --color. De una
+imagen remota, que no se descarga, o en medio del texto, sale su texto alternativo como enlace. En dos columnas interrumpe ambas: el texto anterior se reparte
 parejo arriba y el siguiente sigue debajo. Sin --color, un SVG con colores es un error.
 
 Un bloque de tabla (`| a | b |`, con `|---|---|` como segunda linea) ocupa todo el ancho, igual que
@@ -47,6 +48,8 @@ pagina termina con un titulo o un bloque recien empezado, el script sale con err
 import argparse, datetime, io, re
 from pathlib import Path
 
+from reportlab.graphics import shapes
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
 from reportlab.lib.pagesizes import A4, A5
 from reportlab.lib.styles import ParagraphStyle
@@ -91,9 +94,22 @@ def inline(s):
         return f"\x00{len(codes) - 1}\x00"
 
     s = escape(plain(re.sub(r"`([^`]+)`", keep, s)))
-    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2" color="#1a5fb4">\1</a>', s)
+    urls = []
+
+    def link(m):
+        # la url se aparta para que sus _ queden literales
+        urls.append(m.group(2))
+        return f'<a href="\x02{len(urls) - 1}\x02" color="#1a5fb4">{m.group(1)}</a>'
+
+    # una imagen que no se inserta (remota o en medio del texto) queda como enlace con su texto
+    s = re.sub(r"\[!\[([^\]]*)\]\([^)\s]+\)\]\(([^)\s]+)\)", lambda m: f"[{m[1] or 'imagen'}]({m[2]})", s)
+    s = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)\)", lambda m: f"[{m[1] or 'imagen'}]({m[2]})", s)
+    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", link, s)
     s = re.sub(r"\*\*(.+?)\*\*(?!\*)", r"<b>\1</b>", s)
     s = re.sub(r"\*(.+?)\*", r"<i>\1</i>", s)
+    # `_` solo en los bordes de una palabra, y sin cruzar las etiquetas ya puestas
+    s = re.sub(r"(?<!\w)_(?![\s_])((?:<(\w+)\b[^>]*>.*?</\2>|[^<])+?)(?<![\s_])_(?!\w)", r"<i>\1</i>", s)
+    s = re.sub("\x02(\\d+)\x02", lambda m: urls[int(m.group(1))], s)
     return re.sub(r"\x00(\d+)\x00", lambda m: f'<font face="Courier">{escape(plain(codes[int(m.group(1))]))}</font>', s)
 
 
@@ -266,7 +282,20 @@ def prepare_svg(path):
     return tmp
 
 
-def diagram(path, caption, max_w, max_h, color, style):
+def raster(path, color):
+    """Una foto o captura (PNG, JPG, WebP...) como dibujo, a 96 px por pulgada. Sin color, en grises."""
+    from PIL import Image
+    with Image.open(path) as source:
+        # la transparencia se aplana sobre blanco: al pasar a grises saldria negra
+        rgba = source.convert("RGBA")
+    image = Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba).convert("RGB" if color else "L")
+    w, h = image.width * 0.75, image.height * 0.75
+    drawing = Drawing(w, h)
+    drawing.add(shapes.Image(0, 0, w, h, image))
+    return drawing
+
+
+def svg(path, color):
     tmp = prepare_svg(path)
     try:
         drawing = svg2rlg(tmp)
@@ -276,6 +305,11 @@ def diagram(path, caption, max_w, max_h, color, style):
         raise SystemExit(f"no se pudo leer el SVG: {path}")
     if not color and has_color(drawing):
         raise SystemExit(f"{path} tiene colores: redibujalo en grises o pasa --color")
+    return drawing
+
+
+def diagram(path, caption, max_w, max_h, color, style):
+    drawing = (svg if path.suffix.lower() == ".svg" else raster)(path, color)
     k = min(1, max_w / drawing.width, max_h / drawing.height)
     drawing.scale(k, k)
     drawing.width, drawing.height = drawing.width * k, drawing.height * k
@@ -577,8 +611,10 @@ def story_from(text, body, head, sub, title_style, quote, figure, table, code, p
         if summ:
             story.append(Head(inline(f"**{summ.group(1)}**"), body))
             continue
-        fig = re.fullmatch(r"!\[(.*?)\]\((.+)\)", line)
-        if fig:
+        # imagen sola en su bloque, con o sin enlace: solo se insertan los archivos locales
+        fig = (re.fullmatch(r"\[!\[([^\]]*)\]\(((?:(?!\]\().)+)\)\]\([^)\s]+\)", line)
+               or re.fullmatch(r"!\[([^\]]*)\]\(((?:(?!\]\().)+)\)", line))
+        if fig and not re.match(r"[a-z]{2,}:", fig[2], re.I):
             f = figure(*fig.groups())
             # diagramas seguidos van juntos, uno debajo del otro
             if story and isinstance(story[-1], Figures):
